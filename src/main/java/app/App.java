@@ -14,7 +14,7 @@ import java.util.Scanner;
 
 public class App {
     private final List<User> users;
-    private User currentUser;
+//    private User currentUser; TODO: delete
     private final Config config;
     private final Session session = new Session();
     public App(Config config) {
@@ -132,8 +132,6 @@ public class App {
         session.setCurrentUser(user);
         System.out.printf("Вы переключились на пользователя: %s%n", user.getUuid());
     }
-
-
 
 
     private void handleViewLinks() {
@@ -385,7 +383,7 @@ public class App {
         }
     }
 
-//    private boolean isValidCommand(String input) {
+//    private boolean isValidCommand(String input) { TODO: delete
 //        try {
 //            int command = Integer.parseInt(input); // Проверяем, является ли ввод числом
 //            if (currentUser == null) {

@@ -1,0 +1,2 @@
+defaultClickLimit=10
+defaultExpirationTime=24

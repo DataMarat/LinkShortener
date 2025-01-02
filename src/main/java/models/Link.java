@@ -1,5 +1,5 @@
 package models;
-
+import utils.TimeUtils;
 import java.time.LocalDateTime;
 
 public class Link {
@@ -41,7 +41,7 @@ public class Link {
 
     // Проверка, активна ли ссылка
     public boolean isActive() {
-        return clicks < clickLimit && LocalDateTime.now().isBefore(expirationTime);
+        return clicks < clickLimit && !TimeUtils.isExpired(expirationTime);
     }
 
     // Увеличение количества переходов

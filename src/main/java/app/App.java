@@ -3,7 +3,9 @@ package app;
 import config.Config;
 import models.User;
 import models.Link;
+import models.Session;
 import utils.LinkGenerator;
+import utils.TimeUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +16,7 @@ public class App {
     private final List<User> users;
     private User currentUser;
     private final Config config;
-
+    private final Session session = new Session();
     public App(Config config) {
         this.users = new ArrayList<>();
         this.config = config;
@@ -28,29 +30,28 @@ public class App {
         removeExpiredLinks();
 
         while (true) {
-            // Отображаем меню в зависимости от состояния пользователя
-            if (currentUser == null) {
+            if (session.getCurrentUser() == null) {
                 System.out.println("Введите имя пользователя или наберите exit для выхода:");
-                String input = scanner.nextLine().trim().toLowerCase();
-                if (input.equals("exit")) {
+                String input = scanner.nextLine().trim();
+                if (input.equalsIgnoreCase("exit")) {
                     System.out.println("Выход из программы...");
                     break;
                 }
-                handleUserLogin(input); // Авторизация или создание пользователя
+                handleUserLogin(input);
             } else {
                 displayMenu();
-                String input = scanner.nextLine().trim().toLowerCase();
-                if (input.equals("8") || input.equals("exit")) {
+                String input = scanner.nextLine().trim();
+                if (input.equalsIgnoreCase("8") || input.equalsIgnoreCase("exit")) {
                     System.out.println("Выход из программы...");
                     break;
                 }
-                processCommand(input);
+                processCommand(input); // Обрабатываем команду
             }
 
-            // Удаляем устаревшие ссылки после выполнения каждой команды
-            removeExpiredLinks();
+            removeExpiredLinks(); // Удаление устаревших ссылок
         }
     }
+
 
     private void displayMenu() {
         System.out.println("""
@@ -66,23 +67,47 @@ public class App {
     }
 
     private void processCommand(String input) {
-        if (!isValidCommand(input)) {
+        try {
+            // Проверяем, является ли ввод числом
+            int command = Integer.parseInt(input);
+
+            // Проверяем доступные команды для неавторизованного пользователя
+            if (session.getCurrentUser() == null) {
+                if (command != 1) {
+                    System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
+                    return;
+                }
+            } else {
+                // Проверяем диапазон доступных команд для авторизованного пользователя
+                if (command < 1 || command > 8) {
+                    System.out.println("Ошибка: Введите корректный номер команды.");
+                    return;
+                }
+            }
+
+            // Выполняем команду
+            switch (command) {
+                case 1 -> {
+                    if (session.getCurrentUser() == null) {
+                        System.out.println("Введите имя пользователя:");
+                        Scanner scanner = new Scanner(System.in);
+                        String name = scanner.nextLine().trim();
+                        handleUserLogin(name);
+                    } else {
+                        System.out.println("Вы уже вошли как пользователь: " + session.getCurrentUser().getUuid());
+                    }
+                }
+                case 2 -> handleCreateShortLink();
+                case 3 -> handleGetOriginalLink();
+                case 4 -> handleViewLinks();
+                case 5 -> handleEditClickLimit();
+                case 6 -> handleDeleteLink();
+                case 7 -> handleChangeUser();
+                case 8 -> System.out.println("Выход из программы...");
+                default -> System.out.println("Ошибка: Команда не распознана.");
+            }
+        } catch (NumberFormatException e) {
             System.out.println("Ошибка: Введите корректный номер команды.");
-            return;
-        }
-
-        int command = Integer.parseInt(input); // К этому моменту ввод гарантированно валиден
-
-        switch (command) {
-            case 1 -> handleUserLogin(input);
-            case 2 -> handleCreateShortLink();
-            case 3 -> handleGetOriginalLink();
-            case 4 -> handleViewLinks();
-            case 5 -> handleEditClickLimit();
-            case 6 -> handleDeleteLink();
-            case 7 -> handleChangeUser();
-            case 8 -> System.out.println("Выход из программы.");
-            default -> System.out.println("Неверная команда");
         }
     }
 
@@ -98,23 +123,21 @@ public class App {
             return;
         }
 
-        // Попробуем найти пользователя по UUID
-        currentUser = users.stream()
-                .filter(user -> user.getUuid().equals(input))
-                .findFirst()
-                .orElseGet(() -> {
-                    // Если UUID не найден, предполагаем, что это имя нового пользователя
-                    String uuid = java.util.UUID.randomUUID().toString();
-                    User newUser = new User(input, uuid);
-                    users.add(newUser);
-                    System.out.printf("Создан новый пользователь: %s с UUID %s (используйте UUID как логин)%n", input, uuid);
-                    return newUser;
-                });
+        User user = session.findUserByUuid(input);
+        if (user == null) {
+            user = session.findOrCreateUser(input);
+            System.out.printf("Создан новый пользователь: %s с UUID %s (используйте UUID как логин)%n", user.getName(), user.getUuid());
+        }
 
-        System.out.printf("Вы переключились на пользователя: %s%n", currentUser.getUuid());
+        session.setCurrentUser(user);
+        System.out.printf("Вы переключились на пользователя: %s%n", user.getUuid());
     }
 
-    private void handleDeleteLink() {
+
+
+
+    private void handleViewLinks() {
+        User currentUser = session.getCurrentUser(); // Получаем текущего пользователя из сессии
         if (currentUser == null) {
             System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
             return;
@@ -122,40 +145,30 @@ public class App {
 
         List<Link> links = currentUser.getLinks();
         if (links.isEmpty()) {
-            System.out.println("У вас пока нет ссылок для удаления.");
+            System.out.println("У вас пока нет ссылок.");
             return;
         }
 
         System.out.println("Ваши ссылки:");
         for (int i = 0; i < links.size(); i++) {
-            System.out.printf("%d. Короткая ссылка: %s (Оригинальный URL: %s)%n", i + 1, links.get(i).getShortUrl(), links.get(i).getOriginalUrl());
-        }
+            Link link = links.get(i);
+            boolean isActive = link.isActive();
+            String status = isActive ? "Активна" : "Неактивна";
+            String timeRemaining = link.isActive()
+                    ? TimeUtils.formatRemainingTime(link.getExpirationTime())
+                    : "Истекла";
 
-        System.out.println("Введите номер ссылки, которую хотите удалить (или 0 для отмены):");
-        Scanner scanner = new Scanner(System.in);
-        String input = scanner.nextLine().trim();
-
-        try {
-            int index = Integer.parseInt(input) - 1;
-            if (index == -1) {
-                System.out.println("Удаление отменено.");
-                return;
-            }
-
-            if (index < 0 || index >= links.size()) {
-                System.out.println("Ошибка: Введён некорректный номер.");
-                return;
-            }
-
-            Link removedLink = links.remove(index); // Удаляем ссылку
-            System.out.println("Ссылка удалена: " + removedLink.getShortUrl());
-        } catch (NumberFormatException e) {
-            System.out.println("Ошибка: Введите числовое значение.");
+            System.out.printf("%d. Оригинальный URL: %s%n", i + 1, link.getOriginalUrl());
+            System.out.printf("   Короткая ссылка: %s%n", link.getShortUrl());
+            System.out.printf("   Переходы: %d/%d%n", link.getClicks(), link.getClickLimit());
+            System.out.printf("   Статус: %s%n", status);
+            System.out.printf("   Оставшееся время: %s%n", timeRemaining);
+            System.out.println();
         }
     }
 
-
     private void handleEditClickLimit() {
+        User currentUser = session.getCurrentUser();
         if (currentUser == null) {
             System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
             return;
@@ -209,45 +222,8 @@ public class App {
         }
     }
 
-
-    private void handleViewLinks() {
-        if (currentUser == null) {
-            System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
-            return;
-        }
-
-        List<Link> links = currentUser.getLinks();
-        if (links.isEmpty()) {
-            System.out.println("У вас пока нет ссылок.");
-            return;
-        }
-
-        System.out.println("Ваши ссылки:");
-        for (int i = 0; i < links.size(); i++) {
-            Link link = links.get(i);
-            boolean isActive = link.isActive();
-            String status = isActive ? "Активна" : "Неактивна";
-            String timeRemaining = isActive
-                    ? formatDuration(java.time.Duration.between(java.time.LocalDateTime.now(), link.getExpirationTime()))
-                    : "Истекла";
-
-            System.out.printf("%d. Оригинальный URL: %s%n", i + 1, link.getOriginalUrl());
-            System.out.printf("   Короткая ссылка: %s%n", link.getShortUrl());
-            System.out.printf("   Переходы: %d/%d%n", link.getClicks(), link.getClickLimit());
-            System.out.printf("   Статус: %s%n", status);
-            System.out.printf("   Оставшееся время: %s%n", timeRemaining);
-            System.out.println();
-        }
-    }
-
-    private String formatDuration(java.time.Duration duration) {
-        long hours = duration.toHours();
-        long minutes = duration.toMinutes() % 60;
-        return String.format("%02d ч. %02d мин.", hours, minutes);
-    }
-
-
     private void handleGetOriginalLink() {
+        User currentUser = session.getCurrentUser();
         if (currentUser == null) {
             System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
             return;
@@ -279,29 +255,29 @@ public class App {
     }
 
 
-    private void handleUserLogin(String name) {
-        if (name.isEmpty()) {
-            System.out.println("Ошибка: Имя пользователя не может быть пустым.");
+    private void handleUserLogin(String input) {
+        if (input.isEmpty()) {
+            System.out.println("Ошибка: Имя пользователя или UUID не может быть пустым.");
             return;
         }
 
-        // Проверяем, существует ли пользователь с таким именем
-        currentUser = users.stream()
-                .filter(user -> user.getName().equals(name))
-                .findFirst()
-                .orElseGet(() -> {
-                    // Создаем нового пользователя
-                    String uuid = java.util.UUID.randomUUID().toString();
-                    User newUser = new User(name, uuid);
-                    users.add(newUser);
-                    System.out.printf("Создан новый пользователь: %s с UUID %s (используйте UUID как логин)%n", name, uuid);
-                    return newUser;
-                });
+        // Проверка UUID
+        User user = session.findUserByUuid(input);
+        if (user == null) {
+            // Если это не UUID, считаем, что это имя пользователя
+            user = session.findOrCreateUser(input);
+            if (session.findUserByName(input) == user) {
+                System.out.printf("Создан новый пользователь: %s с UUID %s (используйте UUID как логин)%n", input, user.getUuid());
+            }
+        }
 
-        System.out.printf("Вы вошли как пользователь: %s%n", currentUser.getUuid());
+        session.setCurrentUser(user);
+        System.out.printf("Вы вошли как пользователь: %s%n", user.getUuid());
     }
 
+
     private void handleCreateShortLink() {
+        User currentUser = session.getCurrentUser();
         if (currentUser == null) {
             System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
             return;
@@ -368,18 +344,58 @@ public class App {
         System.out.printf("Короткая ссылка создана: %s%n", shortUrl);
     }
 
+    private void handleDeleteLink() {
+        User currentUser = session.getCurrentUser();
+        if (currentUser == null) {
+            System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
+            return;
+        }
 
-    private boolean isValidCommand(String input) {
+        List<Link> links = currentUser.getLinks();
+        if (links.isEmpty()) {
+            System.out.println("У вас пока нет ссылок для удаления.");
+            return;
+        }
+
+        System.out.println("Ваши ссылки:");
+        for (int i = 0; i < links.size(); i++) {
+            System.out.printf("%d. Короткая ссылка: %s (Оригинальный URL: %s)%n", i + 1, links.get(i).getShortUrl(), links.get(i).getOriginalUrl());
+        }
+
+        System.out.println("Введите номер ссылки, которую хотите удалить (или 0 для отмены):");
+        Scanner scanner = new Scanner(System.in);
+        String input = scanner.nextLine().trim();
+
         try {
-            int command = Integer.parseInt(input); // Проверяем, является ли ввод числом
-            if (currentUser == null) {
-                return command == 1 || command == 8; // Допустимы только команды "1" и "8" до входа
+            int index = Integer.parseInt(input) - 1;
+            if (index == -1) {
+                System.out.println("Удаление отменено.");
+                return;
             }
-            return command >= 1 && command <= 8; // Полный диапазон команд для авторизованного пользователя
+
+            if (index < 0 || index >= links.size()) {
+                System.out.println("Ошибка: Введён некорректный номер.");
+                return;
+            }
+
+            Link removedLink = links.remove(index); // Удаляем ссылку
+            System.out.println("Ссылка удалена: " + removedLink.getShortUrl());
         } catch (NumberFormatException e) {
-            return false; // Если ввод не число
+            System.out.println("Ошибка: Введите числовое значение.");
         }
     }
+
+//    private boolean isValidCommand(String input) {
+//        try {
+//            int command = Integer.parseInt(input); // Проверяем, является ли ввод числом
+//            if (currentUser == null) {
+//                return command == 1 || command == 8; // Допустимы только команды "1" и "8" до входа
+//            }
+//            return command >= 1 && command <= 8; // Полный диапазон команд для авторизованного пользователя
+//        } catch (NumberFormatException e) {
+//            return false; // Если ввод не число
+//        }
+//    }
 
     private void removeExpiredLinks() {
         for (User user : users) {

@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 public class Link {
     private final String originalUrl; // Оригинальный URL
     private final String shortUrl;   // Короткая ссылка
-    private final int clickLimit;    // Лимит переходов
+    private int clickLimit;    // Лимит переходов
     private int clicks;              // Текущее количество переходов
     private final LocalDateTime expirationTime; // Время истечения ссылки
 
@@ -51,5 +51,12 @@ public class Link {
         } else {
             throw new IllegalStateException("Ссылка больше не активна.");
         }
+    }
+
+    public void setClickLimit(int newLimit) {
+        if (newLimit < clicks) {
+            throw new IllegalArgumentException("Новый лимит не может быть меньше текущего количества переходов.");
+        }
+        this.clickLimit = newLimit;
     }
 }

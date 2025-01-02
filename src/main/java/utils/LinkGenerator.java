@@ -1,15 +1,24 @@
 package utils;
 
-import java.util.Random;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 
 public class LinkGenerator {
-    public static String generateShortUrl() {
-        String characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        StringBuilder shortUrl = new StringBuilder();
-        Random random = new Random();
-        for (int i = 0; i < 6; i++) { // Генерируем 6-символьный идентификатор
-            shortUrl.append(characters.charAt(random.nextInt(characters.length())));
+    public static String generateShortUrl(String originalUrl, String userId, int clickLimit, long timestamp) {
+        try {
+            // Формируем строку для хэширования
+            String input = originalUrl + userId + clickLimit + timestamp;
+
+            // Создаем хэш MD5
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(input.getBytes());
+
+            // Преобразуем в строку Base64 и обрезаем до 7 символов
+            return "http://short.url/" + Base64.getUrlEncoder().withoutPadding().encodeToString(digest).substring(0, 7);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("Ошибка: MD5 алгоритм недоступен.", e);
         }
-        return "http://short.url/" + shortUrl;
     }
 }
+

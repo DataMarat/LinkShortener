@@ -25,14 +25,14 @@ public class App {
     public void run() {
         Scanner scanner = new Scanner(System.in);
 
-        // Удаляем устаревшие ссылки при запуске
         System.out.println("Проверка устаревших ссылок...");
         removeExpiredLinks();
 
+        System.out.println("Введите `0` для вывода списка команд.");
+
         while (true) {
             if (session.getCurrentUser() == null) {
-                // Авторизация пользователя
-                System.out.println("Введите имя пользователя или наберите `exit` для выхода:");
+                System.out.println("\nВведите имя пользователя или наберите `exit` для выхода:");
                 String input = scanner.nextLine().trim();
                 if (input.equalsIgnoreCase("exit")) {
                     System.out.println("Выход из программы...");
@@ -40,24 +40,30 @@ public class App {
                 }
                 handleUserLogin(input);
             } else {
-                // Отображение главного меню
-                displayMenu();
+                System.out.print("Введите команду (0 - список команд): "); // Добавлено приглашение с упоминанием "0"
                 String input = scanner.nextLine().trim();
                 if (input.equalsIgnoreCase("exit")) {
                     System.out.println("Выход из программы...");
                     break;
                 }
-                processCommand(input); // Обрабатываем команду
+                if (input.equals("0")) {
+                    displayMenu(); // Показываем меню
+                    continue;
+                }
+                processCommand(input);
             }
 
-            // Удаление устаревших ссылок
             removeExpiredLinks();
         }
     }
 
 
     private void displayMenu() {
+        System.out.println("\n================================");
+        System.out.println("            МЕНЮ");
+        System.out.println("================================");
         System.out.println("""
+                0. Вывести меню команд
                 1. Ввести имя пользователя
                 2. Создать короткую ссылку
                 3. Получить длинную ссылку
@@ -66,8 +72,8 @@ public class App {
                 6. Удалить ссылку
                 7. Перейти по короткой ссылке
                 8. Сменить пользователя
-                Для выхода введите `exit`
-                """);
+                Для выхода введите `exit`""");
+        System.out.println("================================");
     }
 
 
@@ -137,7 +143,7 @@ public class App {
         User user = session.findUserByUuid(input);
         if (user == null) {
             user = session.findOrCreateUser(input);
-            System.out.printf("Создан новый пользователь: %s с UUID %s (используйте UUID как логин)%n", user.getName(), user.getUuid());
+            System.out.printf("Создан новый пользователь %s с UUID %s (используйте UUID как логин)%n", user.getName(), user.getUuid());
         }
 
         session.setCurrentUser(user);
@@ -146,26 +152,26 @@ public class App {
 
 
     private void handleViewLinks() {
-        User currentUser = session.getCurrentUser(); // Получаем текущего пользователя из сессии
+        User currentUser = session.getCurrentUser();
         if (currentUser == null) {
             System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
             return;
         }
 
-        List<Link> links = currentUser.getLinks();
-        if (links.isEmpty()) {
-            System.out.println("У вас пока нет ссылок.");
+        List<Link> activeLinks = currentUser.getLinks().stream()
+                .filter(Link::isActive) // Фильтруем только активные ссылки
+                .toList();
+
+        if (activeLinks.isEmpty()) {
+            System.out.println("У вас пока нет активных ссылок.");
             return;
         }
 
         System.out.println("Ваши ссылки:");
-        for (int i = 0; i < links.size(); i++) {
-            Link link = links.get(i);
-            boolean isActive = link.isActive();
-            String status = isActive ? "Активна" : "Неактивна";
-            String timeRemaining = link.isActive()
-                    ? TimeUtils.formatRemainingTime(link.getExpirationTime())
-                    : "Истекла";
+        for (int i = 0; i < activeLinks.size(); i++) {
+            Link link = activeLinks.get(i);
+            String status = "Активна";
+            String timeRemaining = TimeUtils.formatRemainingTime(link.getExpirationTime());
 
             System.out.printf("%d. Оригинальный URL: %s%n", i + 1, link.getOriginalUrl());
             System.out.printf("   Короткая ссылка: %s%n", link.getShortUrl());
@@ -176,6 +182,7 @@ public class App {
         }
     }
 
+
     private void handleEditClickLimit() {
         User currentUser = session.getCurrentUser();
         if (currentUser == null) {
@@ -183,17 +190,21 @@ public class App {
             return;
         }
 
-        List<Link> links = currentUser.getLinks();
-        if (links.isEmpty()) {
-            System.out.println("У вас пока нет ссылок для редактирования.");
+        List<Link> activeLinks = currentUser.getLinks().stream()
+                .filter(Link::isActive) // Фильтруем только активные ссылки
+                .toList();
+
+        if (activeLinks.isEmpty()) {
+            System.out.println("У вас пока нет активных ссылок для редактирования.");
             return;
         }
 
         System.out.println("Ваши ссылки:");
-        for (int i = 0; i < links.size(); i++) {
+        for (int i = 0; i < activeLinks.size(); i++) {
+            Link link = activeLinks.get(i);
             System.out.printf("%d. Короткая ссылка: %s (Оригинальный URL: %s, Переходы: %d/%d)%n",
-                    i + 1, links.get(i).getShortUrl(), links.get(i).getOriginalUrl(),
-                    links.get(i).getClicks(), links.get(i).getClickLimit());
+                    i + 1, link.getShortUrl(), link.getOriginalUrl(),
+                    link.getClicks(), link.getClickLimit());
         }
 
         System.out.println("Введите номер ссылки, для которой хотите изменить лимит переходов (или 0 для отмены):");
@@ -207,12 +218,12 @@ public class App {
                 return;
             }
 
-            if (index < 0 || index >= links.size()) {
+            if (index < 0 || index >= activeLinks.size()) {
                 System.out.println("Ошибка: Введён некорректный номер.");
                 return;
             }
 
-            Link link = links.get(index);
+            Link link = activeLinks.get(index);
             System.out.printf("Текущий лимит переходов для ссылки %s: %d%n", link.getShortUrl(), link.getClickLimit());
             System.out.println("Введите новый лимит переходов:");
 
@@ -230,6 +241,7 @@ public class App {
             System.out.println("Ошибка: Введите числовое значение.");
         }
     }
+
 
     private void handleGetOriginalLink() {
         if (session.getCurrentUser() == null) {
@@ -314,14 +326,24 @@ public class App {
         }
 
         // Ввод времени жизни ссылки
-        System.out.printf("Введите время жизни в часах (или нажмите Enter для значения по умолчанию: %d):%n", config.getDefaultExpirationTime().toHours());
+        long maxExpirationHours = config.getDefaultExpirationTime().toHours();
+        System.out.printf("Введите время жизни в часах (или нажмите Enter для значения по умолчанию: %d, максимум: %d):%n",
+                config.getDefaultExpirationTime().toHours(), maxExpirationHours);
         String expirationTimeInput = scanner.nextLine().trim();
         long expirationHours;
         try {
-            expirationHours = expirationTimeInput.isEmpty() ? config.getDefaultExpirationTime().toHours() : Long.parseLong(expirationTimeInput);
+            expirationHours = expirationTimeInput.isEmpty()
+                    ? config.getDefaultExpirationTime().toHours()
+                    : Long.parseLong(expirationTimeInput);
+
             if (expirationHours <= 0) {
                 System.out.println("Ошибка: Время жизни должно быть положительным числом.");
                 return;
+            }
+
+            if (expirationHours > maxExpirationHours) {
+                System.out.printf("Превышено максимальное время жизни (%d часов). Будет установлено максимальное время.%n", maxExpirationHours);
+                expirationHours = maxExpirationHours;
             }
         } catch (NumberFormatException e) {
             System.out.println("Ошибка: Введите корректное числовое значение для времени жизни.");
@@ -349,6 +371,7 @@ public class App {
         System.out.printf("Короткая ссылка создана: %s%n", shortUrl);
     }
 
+
     private void handleDeleteLink() {
         User currentUser = session.getCurrentUser();
         if (currentUser == null) {
@@ -356,6 +379,7 @@ public class App {
             return;
         }
 
+        // Получаем список активных ссылок
         List<Link> links = currentUser.getLinks();
         if (links.isEmpty()) {
             System.out.println("У вас пока нет ссылок для удаления.");
@@ -364,7 +388,9 @@ public class App {
 
         System.out.println("Ваши ссылки:");
         for (int i = 0; i < links.size(); i++) {
-            System.out.printf("%d. Короткая ссылка: %s (Оригинальный URL: %s)%n", i + 1, links.get(i).getShortUrl(), links.get(i).getOriginalUrl());
+            Link link = links.get(i);
+            System.out.printf("%d. Короткая ссылка: %s (Оригинальный URL: %s)%n",
+                    i + 1, link.getShortUrl(), link.getOriginalUrl());
         }
 
         System.out.println("Введите номер ссылки, которую хотите удалить (или 0 для отмены):");
@@ -383,8 +409,9 @@ public class App {
                 return;
             }
 
-            Link removedLink = links.remove(index); // Удаляем ссылку
-            System.out.println("Ссылка удалена: " + removedLink.getShortUrl());
+            // Удаляем ссылку из списка
+            Link removedLink = links.remove(index);
+            System.out.println("Ссылка была удалена: " + removedLink.getShortUrl());
         } catch (NumberFormatException e) {
             System.out.println("Ошибка: Введите числовое значение.");
         }

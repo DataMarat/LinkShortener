@@ -14,9 +14,9 @@ import java.util.Scanner;
 
 public class App {
     private final List<User> users;
-//    private User currentUser; TODO: delete
     private final Config config;
     private final Session session = new Session();
+
     public App(Config config) {
         this.users = new ArrayList<>();
         this.config = config;
@@ -31,7 +31,8 @@ public class App {
 
         while (true) {
             if (session.getCurrentUser() == null) {
-                System.out.println("Введите имя пользователя или наберите exit для выхода:");
+                // Авторизация пользователя
+                System.out.println("Введите имя пользователя или наберите `exit` для выхода:");
                 String input = scanner.nextLine().trim();
                 if (input.equalsIgnoreCase("exit")) {
                     System.out.println("Выход из программы...");
@@ -39,35 +40,45 @@ public class App {
                 }
                 handleUserLogin(input);
             } else {
+                // Отображение главного меню
                 displayMenu();
                 String input = scanner.nextLine().trim();
-                if (input.equalsIgnoreCase("8") || input.equalsIgnoreCase("exit")) {
+                if (input.equalsIgnoreCase("exit")) {
                     System.out.println("Выход из программы...");
                     break;
                 }
                 processCommand(input); // Обрабатываем команду
             }
 
-            removeExpiredLinks(); // Удаление устаревших ссылок
+            // Удаление устаревших ссылок
+            removeExpiredLinks();
         }
     }
 
 
     private void displayMenu() {
         System.out.println("""
-            1. Ввести имя пользователя
-            2. Создать короткую ссылку
-            3. Получить длинную ссылку
-            4. Просмотреть ссылки
-            5. Редактировать лимит переходов
-            6. Удалить ссылку
-            7. Сменить пользователя
-            8. Выход (или `exit`)
-            """);
+                1. Ввести имя пользователя
+                2. Создать короткую ссылку
+                3. Получить длинную ссылку
+                4. Просмотреть ссылки
+                5. Редактировать лимит переходов
+                6. Удалить ссылку
+                7. Перейти по короткой ссылке
+                8. Сменить пользователя
+                Для выхода введите `exit`
+                """);
     }
+
 
     private void processCommand(String input) {
         try {
+            // Проверяем команду выхода
+            if (input.equalsIgnoreCase("exit")) {
+                System.out.println("Выход из программы...");
+                System.exit(0); // Завершаем программу
+            }
+
             // Проверяем, является ли ввод числом
             int command = Integer.parseInt(input);
 
@@ -102,8 +113,8 @@ public class App {
                 case 4 -> handleViewLinks();
                 case 5 -> handleEditClickLimit();
                 case 6 -> handleDeleteLink();
-                case 7 -> handleChangeUser();
-                case 8 -> System.out.println("Выход из программы...");
+                case 7 -> handleRedirectToOriginalLink();
+                case 8 -> handleChangeUser();
                 default -> System.out.println("Ошибка: Команда не распознана.");
             }
         } catch (NumberFormatException e) {
@@ -221,8 +232,7 @@ public class App {
     }
 
     private void handleGetOriginalLink() {
-        User currentUser = session.getCurrentUser();
-        if (currentUser == null) {
+        if (session.getCurrentUser() == null) {
             System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
             return;
         }
@@ -231,24 +241,21 @@ public class App {
         System.out.println("Введите короткую ссылку:");
         String shortUrl = scanner.nextLine().trim();
 
-        // Поиск ссылки среди ссылок текущего пользователя
-        Link link = currentUser.getLinks().stream()
+        Link link = session.getCurrentUser().getLinks().stream()
                 .filter(l -> l.getShortUrl().equals(shortUrl))
                 .findFirst()
                 .orElse(null);
 
         if (link == null) {
-            System.out.println("Ошибка: ссылка не найдена.");
+            System.out.println("Ошибка: Ссылка не найдена.");
             return;
         }
 
         if (!link.isActive()) {
-            System.out.println("Ошибка: ссылка недоступна. Она либо истекла, либо исчерпан лимит переходов.");
+            System.out.println("Ссылка недоступна: лимит переходов исчерпан или срок действия истёк.");
             return;
         }
 
-        // Увеличиваем счётчик переходов и выводим оригинальный URL
-        link.incrementClicks();
         System.out.println("Оригинальный URL: " + link.getOriginalUrl());
     }
 
@@ -383,17 +390,42 @@ public class App {
         }
     }
 
-//    private boolean isValidCommand(String input) { TODO: delete
-//        try {
-//            int command = Integer.parseInt(input); // Проверяем, является ли ввод числом
-//            if (currentUser == null) {
-//                return command == 1 || command == 8; // Допустимы только команды "1" и "8" до входа
-//            }
-//            return command >= 1 && command <= 8; // Полный диапазон команд для авторизованного пользователя
-//        } catch (NumberFormatException e) {
-//            return false; // Если ввод не число
-//        }
-//    }
+    private void handleRedirectToOriginalLink() {
+        if (session.getCurrentUser() == null) {
+            System.out.println("Ошибка: сначала введите имя пользователя (команда 1).");
+            return;
+        }
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Введите короткую ссылку:");
+        String shortUrl = scanner.nextLine().trim();
+
+        Link link = session.getCurrentUser().getLinks().stream()
+                .filter(l -> l.getShortUrl().equals(shortUrl))
+                .findFirst()
+                .orElse(null);
+
+        if (link == null) {
+            System.out.println("Ошибка: Ссылка не найдена.");
+            return;
+        }
+
+        if (!link.isActive()) {
+            System.out.println("Ссылка недоступна: лимит переходов исчерпан или срок действия истёк.");
+            return;
+        }
+
+        // Увеличиваем счётчик переходов
+        link.incrementClicks();
+
+        try {
+            System.out.println("Открытие оригинального URL в браузере...");
+            java.awt.Desktop.getDesktop().browse(new java.net.URI(link.getOriginalUrl()));
+        } catch (Exception e) {
+            System.out.println("Ошибка при попытке открыть ссылку: " + e.getMessage());
+        }
+    }
+
 
     private void removeExpiredLinks() {
         for (User user : users) {
